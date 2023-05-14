@@ -1,0 +1,2 @@
+/home/sam/pico/projects/RP2040_W5100S/build/CMakeFiles/edit_cache.dir
+/home/sam/pico/projects/RP2040_W5100S/build/CMakeFiles/rebuild_cache.dir
