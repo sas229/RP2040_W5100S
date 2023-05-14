@@ -3,8 +3,6 @@
 static void (*callback_ptr)(void);
 static struct repeating_timer g_timer;
 
-static async_context_poll_t context;
-// static async_context_t *W5100S_async_context;
 static async_context_poll_t W5100S_async_context_poll;
 static async_context_t *W5100S_async_context;
 
