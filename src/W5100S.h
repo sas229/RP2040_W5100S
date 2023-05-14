@@ -29,6 +29,9 @@ extern "C" {
 #include "lwip/dns.h"
 #include "lwip/tcpip.h"
 
+#include "pico/async_context_poll.h"
+#include "pico/lwip_nosys.h"
+
 // SPI setup.
 #define SPI_PORT spi0
 #define PIN_SCK 18
@@ -47,7 +50,6 @@ extern "C" {
 #define RECV_TIMEOUT (1000 * 10) // 10 seconds
 
 // static uint8_t tx_frame[1542];
-// static const uint32_t ethernet_polynomial_le = 0xedb88320U;
 
 typedef struct _W5100S_t  {
     uint8_t mac[6];
@@ -57,7 +59,8 @@ typedef struct _W5100S_t  {
     struct pbuf *p;
     uint8_t tx_frame;
     uint32_t ethernet_polynomial_le;
-    
+    int spi_frequency;
+
     int connect_timeout;
     bool cable_connected;
     bool link_up;
@@ -72,28 +75,28 @@ typedef struct _W5100S_t  {
     dma_channel_config dma_channel_config_rx;
 } W5100S_t;
 
-extern W5100S_t *W5100S_state;
+extern W5100S_t W5100S_state;
 
 /** @brief Initialisation function. */
-int W5100S_init();
+int W5100S_init(W5100S_t *self);
 
 /** @brief Connect function. */
-bool W5100S_connect();
+bool W5100S_connect(W5100S_t *self);
 
 /** @brief Check if cable is connected. */
-bool W5100S_cable_connected();
+bool W5100S_cable_connected(W5100S_t *self);
 
 /** @brief Process any data. */
-void W5100S_process();
+void W5100S_process(W5100S_t *self);
 
 /** @brief Poll for work. */
-void W5100S_poll();
+void W5100S_poll(W5100S_t *self);
 
 /** @brief Bring the link up.*/
-bool W5100S_bring_link_up();
+bool W5100S_bring_link_up(W5100S_t *self);
 
 /** @brief Bring the link down.*/
-void W5100S_bring_link_down();
+void W5100S_bring_link_down(W5100S_t *self);
 
 /** @brief Netif status callback. */
 void W5100S_status_callback(struct netif *netif);
@@ -102,11 +105,11 @@ void W5100S_status_callback(struct netif *netif);
 void W5100S_link_callback(struct netif *netif);
 
 /** @brief W5100S reset function. */
-void W5100S_reset();
+void W5100S_reset(W5100S_t *self);
 
-static inline void W5100S_select(void);
+static inline void W5100S_select();
 
-static inline void W5100S_deselect(void);
+static inline void W5100S_deselect();
 
 static uint8_t W5100S_read(void);
 
@@ -120,13 +123,15 @@ static void W5100S_critical_section_lock();
 
 static void W5100S_critical_section_unlock();
 
-void W5100S_spi_initialize(void);
+void W5100S_spi_init(W5100S_t *self);
 
-void W5100S_cris_initialize();
+void W5100S_dma_init(W5100S_t *self);
 
-void W5100S_initialize(void);
+void W5100S_critical_section_init(W5100S_t *self);
 
-void W5100S_check(void);
+void W5100S_chip_init(W5100S_t *self);
+
+void W5100S_version_check(W5100S_t *self);
 
 int32_t W5100S_send_lwip(uint8_t sn, uint8_t *buf, uint16_t len);
 
@@ -134,19 +139,31 @@ int32_t W5100S_recv_lwip(uint8_t sn, uint8_t *buf, uint16_t len);
 
 err_t W5100S_netif_output(struct netif *netif, struct pbuf *p);
 
-err_t W5100S_netif_initialize(struct netif *netif);
+err_t W5100S_netif_init(struct netif *netif);
 
 static uint32_t W5100S_ethernet_frame_crc(const uint8_t *data, int length);
 
-void W5100S_gpio_interrupt_initialize(uint8_t socket, void (*callback)(void));
+void W5100S_gpio_interrupt_init(uint8_t socket, void (*callback)(void));
 
 static void W5100S_gpio_interrupt_callback(uint gpio, uint32_t events);
 
-void W5100S_1ms_timer_initialize(void (*callback)(void));
+void W5100S_1ms_timer_init(void (*callback)(void));
 
 bool W5100S_1ms_timer_callback(struct repeating_timer *t);
 
 void W5100S_delay_ms(uint32_t ms);
+
+bool W5100S_driver_init(async_context_t *context);
+
+void W5100S_driver_deinit(async_context_t *context);
+
+uint32_t W5100S_irq_init(__unused void *param);
+
+uint32_t W5100S_irq_deinit(__unused void *param);
+
+static void W5100S_do_poll(async_context_t *context, __unused async_when_pending_worker_t *worker);
+
+static void W5100S_sleep_timeout_reached(async_context_t *context, __unused async_at_time_worker_t *worker);
 
 #endif
 

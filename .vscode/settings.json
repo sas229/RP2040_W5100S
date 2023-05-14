@@ -3,6 +3,8 @@
         "wizchip_conf.h": "c",
         "stdio.h": "c",
         "w5100s.h": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "*.ipp": "c",
+        "async_context.h": "c"
     }
 }

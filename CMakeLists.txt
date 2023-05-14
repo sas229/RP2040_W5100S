@@ -31,14 +31,18 @@ target_include_directories(W5100S INTERFACE
 target_link_libraries(W5100S INTERFACE
     pico_stdlib
     pico_time
+    pico_async_context_poll
     hardware_spi 
     hardware_dma
     hardware_clocks
     picolog 
-    pico_lwip_arch 
     pico_lwip
+    pico_lwip_nosys
     )
-target_compile_definitions(W5100S INTERFACE _WIZCHIP_=W5100S)
+target_compile_definitions(W5100S INTERFACE 
+    _WIZCHIP_=W5100S
+    NOSYS=1
+    )
 message("W5100S interface library available.")
 
 # Add required subdirectories to build examples.
