@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.22)
+project(W5100S)
+add_library(W5100S INTERFACE)
+target_sources(W5100S INTERFACE ${CMAKE_CURRENT_LIST_DIR}/src/W5100S.c)
+target_include_directories(W5100S INTERFACE ${CMAKE_CURRENT_LIST_DIR}/src/)
+target_link_libraries(W5100S INTERFACE pico_stdlib hardware_spi)
