@@ -26,6 +26,7 @@ int main() {
     while (true) {
         printf("Hello, world!\n");
         sleep_ms(2000);
+        W5100s_arch_poll();
     }
     return 0;
 }

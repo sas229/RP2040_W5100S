@@ -538,4 +538,8 @@ static void W5100S_sleep_timeout_reached(async_context_t *context, __unused asyn
     async_context_set_work_pending(context, &W5100S_poll_worker);
 }
 
+void W5100s_arch_poll() {
+    async_context_poll(W5100S_async_context);
+}
+
 

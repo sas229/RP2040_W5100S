@@ -165,6 +165,8 @@ static void W5100S_do_poll(async_context_t *context, __unused async_when_pending
 
 static void W5100S_sleep_timeout_reached(async_context_t *context, __unused async_at_time_worker_t *worker);
 
+void W5100s_arch_poll();
+
 #endif
 
 #ifdef __cplusplus
