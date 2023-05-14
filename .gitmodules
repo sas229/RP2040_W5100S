@@ -4,3 +4,6 @@
 [submodule "libraries/pico-sdk"]
 	path = libraries/pico-sdk
 	url = https://github.com/raspberrypi/pico-sdk.git
+[submodule "libraries/picolog"]
+	path = libraries/picolog
+	url = https://github.com/sas229/picolog.git

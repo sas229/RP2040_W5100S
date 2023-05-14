@@ -1,5 +1,8 @@
 {
     "files.associations": {
-        "wizchip_conf.h": "c"
+        "wizchip_conf.h": "c",
+        "stdio.h": "c",
+        "w5100s.h": "c",
+        "stdlib.h": "c"
     }
 }
