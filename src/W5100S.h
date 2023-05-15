@@ -77,6 +77,9 @@ typedef struct _W5100S_t  {
 
 extern W5100S_t W5100S_state;
 
+/** @brief Return async context. */
+async_context_t *W5100S_get_async_context();
+
 /** @brief Initialisation function. */
 int W5100S_init(W5100S_t *self);
 

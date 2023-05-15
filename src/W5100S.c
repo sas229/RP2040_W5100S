@@ -14,6 +14,10 @@ static async_at_time_worker_t sleep_timeout_worker = {
         .do_work = W5100S_sleep_timeout_reached
 };
 
+async_context_t *W5100S_get_async_context() {
+    return W5100S_async_context;
+}
+
 int W5100S_init(W5100S_t *self) {
     // Initialise WizNet chip.
     PICOLOG_INFO("Initialising W5100S chip.");
