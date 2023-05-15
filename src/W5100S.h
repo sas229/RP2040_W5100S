@@ -12,6 +12,7 @@ extern "C" {
 #include "pico/stdlib.h"
 #include "pico/binary_info.h"
 #include "pico/critical_section.h"
+#include "pico/unique_id.h"
 #include "hardware/spi.h"
 #include "hardware/dma.h"
 #include "hardware/clocks.h"
@@ -65,6 +66,7 @@ typedef struct _W5100S_t  {
     uint8_t tx_frame;
     uint32_t ethernet_polynomial_le;
     int spi_frequency;
+    uint8_t socket;
 
     int connect_timeout;
     bool cable_connected;
@@ -151,35 +153,41 @@ err_t W5100S_netif_init(struct netif *netif);
 
 static uint32_t W5100S_ethernet_frame_crc(const uint8_t *data, int length);
 
-void W5100S_gpio_interrupt_init(uint8_t socket, void (*callback)(void));
+// void W5100S_gpio_interrupt_init(uint8_t socket, void (*callback)(void));
 
-static void W5100S_gpio_interrupt_callback(uint gpio, uint32_t events);
+// static void W5100S_gpio_interrupt_callback(uint gpio, uint32_t events);
 
-void W5100S_1ms_timer_init(void (*callback)(void));
+// void W5100S_1ms_timer_init(void (*callback)(void));
 
-bool W5100S_1ms_timer_callback(struct repeating_timer *t);
+// bool W5100S_1ms_timer_callback(struct repeating_timer *t);
 
-void W5100S_delay_ms(uint32_t ms);
+// void W5100S_delay_ms(uint32_t ms);
 
-bool W5100S_driver_init(async_context_t *context);
+bool W5100S_driver_init(W5100S_t *self, async_context_t *context);
 
 void W5100S_driver_deinit(async_context_t *context);
 
 static void W5100S_set_irq_enabled(bool enabled);
 
-uint32_t W5100S_irq_init(__unused void *param);
+uint32_t W5100S_irq_init(void *param);
 
-uint32_t W5100S_irq_deinit(__unused void *param);
+uint32_t W5100S_irq_deinit(void *param);
 
 static void W5100S_gpio_irq_handler(void);
 
 static void W5100S_do_poll(async_context_t *context, __unused async_when_pending_worker_t *worker);
 
-static void W5100S_sleep_timeout_reached(async_context_t *context, __unused async_at_time_worker_t *worker);
+// static void W5100S_sleep_timeout_reached(async_context_t *context, __unused async_at_time_worker_t *worker);
 
 void W5100s_arch_poll();
 
 void W5100S_post_poll_hook(void);
+
+static inline uint64_t W5100S_mix(uint64_t h);
+
+uint64_t W5100S_fast_hash_64(const void * buf, size_t len, uint64_t seed);
+
+void W5100S_mac_init(W5100S_t *self);
 
 #endif
 

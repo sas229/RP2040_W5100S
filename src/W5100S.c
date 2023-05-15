@@ -10,9 +10,9 @@ static async_when_pending_worker_t W5100S_poll_worker = {
         .do_work = W5100S_do_poll
 };
 
-static async_at_time_worker_t sleep_timeout_worker = {
-        .do_work = W5100S_sleep_timeout_reached
-};
+// static async_at_time_worker_t sleep_timeout_worker = {
+//         .do_work = W5100S_sleep_timeout_reached
+// };
 
 async_context_t *W5100S_get_async_context() {
     return W5100S_async_context;
@@ -21,6 +21,7 @@ async_context_t *W5100S_get_async_context() {
 int W5100S_init(W5100S_t *self) {
     // Initialise WizNet chip.
     PICOLOG_INFO("Initialising W5100S chip.");
+    W5100S_mac_init(self);
     W5100S_spi_init(self);
     W5100S_dma_init(self);
     W5100S_critical_section_init(self);
@@ -33,7 +34,7 @@ int W5100S_init(W5100S_t *self) {
     // Currently only implemented for poll method. Threadsafe background and FreeRTOS methods to be added.
     async_context_poll_init_with_defaults(&W5100S_async_context_poll);
     W5100S_async_context = &W5100S_async_context_poll.core;
-    bool ok = W5100S_driver_init(W5100S_async_context);  
+    bool ok = W5100S_driver_init(&W5100S_state, W5100S_async_context);  
     ok &= lwip_nosys_init(W5100S_async_context);
     PICOLOG_DEBUG("W5100S context initialised lwip.");
 
@@ -142,6 +143,7 @@ void W5100S_process(W5100S_t *self) {
 }
 
 void W5100S_poll(W5100S_t *self) {
+    PICOLOG_TRACE("W5100S polling.");
     W5100S_cable_connected(self);
     // Check for DHCP IP address allocation.
     if (!self->dhcp_ip_allocated) {
@@ -163,7 +165,7 @@ void W5100S_poll(W5100S_t *self) {
 
     // Re-enable interrupt.
     W5100S_post_poll_hook();
-    PICOLOG_TRACE("Polling complete.");
+    PICOLOG_TRACE("W5100S polling complete.");
 
     // // Cyclic lwip timers check.
     // sys_check_timeouts();
@@ -461,46 +463,47 @@ static uint32_t W5100S_ethernet_frame_crc(const uint8_t *data, int length) {
     return ~crc;
 }
 
-void W5100S_gpio_interrupt_init(uint8_t socket, void (*callback)(void)) {
-    uint16_t reg_val;
-    int ret_val;
-    reg_val = (SIK_CONNECTED | SIK_DISCONNECTED | SIK_RECEIVED | SIK_TIMEOUT); // Except SendOK.
-    ret_val = ctlsocket(socket, CS_SET_INTMASK, (void *)&reg_val);
-    reg_val = (1 << socket);
-    ret_val = ctlwizchip(CW_SET_INTRMASK, (void *)&reg_val);
-    callback_ptr = callback;
-    gpio_set_irq_enabled_with_callback(PIN_INT, GPIO_IRQ_EDGE_FALL, true, &W5100S_gpio_interrupt_callback);
-}
+// void W5100S_gpio_interrupt_init(uint8_t socket, void (*callback)(void)) {
+//     uint16_t reg_val;
+//     int ret_val;
+//     reg_val = (SIK_CONNECTED | SIK_DISCONNECTED | SIK_RECEIVED | SIK_TIMEOUT); // Except SendOK.
+//     ret_val = ctlsocket(socket, CS_SET_INTMASK, (void *)&reg_val);
+//     reg_val = (1 << socket);
+//     ret_val = ctlwizchip(CW_SET_INTRMASK, (void *)&reg_val);
+//     callback_ptr = callback;
+    // gpio_set_irq_enabled_with_callback(PIN_INT, GPIO_IRQ_EDGE_FALL, true, &W5100S_gpio_interrupt_callback);
+// }
 
-static void W5100S_gpio_interrupt_callback(uint gpio, uint32_t events) {
-    if (callback_ptr != NULL) {
-        callback_ptr();
-    }
-}
+// static void W5100S_gpio_interrupt_callback(uint gpio, uint32_t events) {
+//     if (callback_ptr != NULL) {
+//         callback_ptr();
+//     }
+// }
 
-void W5100S_1ms_timer_init(void (*callback)(void)) {
-    callback_ptr = callback;
-    add_repeating_timer_us(-1000, W5100S_1ms_timer_callback, NULL, &g_timer);
-}
+// void W5100S_1ms_timer_init(void (*callback)(void)) {
+//     callback_ptr = callback;
+//     add_repeating_timer_us(-1000, W5100S_1ms_timer_callback, NULL, &g_timer);
+// }
 
-bool W5100S_1ms_timer_callback(struct repeating_timer *t) {
-    if (callback_ptr != NULL) {
-        callback_ptr();
-    }
-}
+// bool W5100S_1ms_timer_callback(struct repeating_timer *t) {
+//     if (callback_ptr != NULL) {
+//         callback_ptr();
+//     }
+// }
 
-void W5100S_delay_ms(uint32_t ms) {
-    sleep_ms(ms);
-}
+// void W5100S_delay_ms(uint32_t ms) {
+//     sleep_ms(ms);
+// }
 
-bool W5100S_driver_init(async_context_t *context) {
-    async_context_execute_sync(context, W5100S_irq_init, NULL);
+bool W5100S_driver_init(W5100S_t *self, async_context_t *context) {
+    uint8_t *socket = &self->socket;
+    async_context_execute_sync(context, W5100S_irq_init, socket);
     async_context_add_when_pending_worker(context, &W5100S_poll_worker);
     PICOLOG_DEBUG("W5100S driver async_context setup.");
     return true;
 }
 
-void cyw43_driver_deinit(async_context_t *context) {
+void W5100S_driver_deinit(async_context_t *context) {
     assert(context == W5100S_async_context);
     // async_context_remove_at_time_worker(context, &sleep_timeout_worker);
     async_context_remove_when_pending_worker(context, &W5100S_poll_worker);
@@ -510,19 +513,30 @@ void cyw43_driver_deinit(async_context_t *context) {
     W5100S_async_context = NULL;
 }
 
-uint32_t W5100S_irq_init(__unused void *param) {
+uint32_t W5100S_irq_init(void *param) {
 #ifndef NDEBUG
     assert(get_core_num() == async_context_core_num(W5100S_async_context));
 #endif
+    // Setup interrupt on W5100S.
+    uint8_t socket = *(uint8_t*)param;
+    uint16_t reg_val;
+    int ret_val;
+    reg_val = (SIK_CONNECTED | SIK_DISCONNECTED | SIK_RECEIVED | SIK_TIMEOUT); // Except SendOK.
+    ret_val = ctlsocket(socket, CS_SET_INTMASK, (void *)&reg_val);
+    reg_val = (1 << socket);
+    ret_val = ctlwizchip(CW_SET_INTRMASK, (void *)&reg_val);
+    PICOLOG_DEBUG("W5100S interuppt initialised on chip.");
+
+    // Setup interrupt on RP2040.
     gpio_add_raw_irq_handler_with_order_priority(PIN_INT, W5100S_gpio_irq_handler, W5100S_GPIO_IRQ_HANDLER_PRIORITY);
     W5100S_set_irq_enabled(true);
     irq_set_enabled(IO_IRQ_BANK0, true);
-    PICOLOG_DEBUG("W5100S interrupt initialised.");
+    PICOLOG_DEBUG("W5100S interrupt initialised on RP2040.");
     return 0;
 }
 
 static void W5100S_set_irq_enabled(bool enabled) {
-    gpio_set_irq_enabled(PIN_INT, GPIO_IRQ_LEVEL_LOW, enabled);
+    gpio_set_irq_enabled(PIN_INT, GPIO_IRQ_EDGE_FALL, enabled);
 }
 
 uint32_t W5100S_irq_deinit(__unused void *param) {
@@ -537,11 +551,11 @@ uint32_t W5100S_irq_deinit(__unused void *param) {
 
 static void W5100S_gpio_irq_handler(void) {
     uint32_t events = gpio_get_irq_event_mask(PIN_INT);
-    if (events & GPIO_IRQ_LEVEL_LOW) {
+    if (events & GPIO_IRQ_EDGE_FALL) {
         PICOLOG_TRACE("W5100S interrupt event.");
-        // As we use a high level interrupt, it will go off forever until it's serviced
-        // So disable the interrupt until this is done. It's re-enabled again by W5100S_POST_POLL_HOOK
-        // which is called at the end of W5100S_poll_func.
+        // As we use a high level interrupt, it will go off forever until it's serviced.
+        // So disable the interrupt until this is done. It's re-enabled again by
+        // W5100S_post_poll_hook() which is called at the end of W5100S_poll_func.
         W5100S_set_irq_enabled(false);
         async_context_set_work_pending(W5100S_async_context, &W5100S_poll_worker);
     }
@@ -555,11 +569,11 @@ static void W5100S_do_poll(async_context_t *context, __unused async_when_pending
     W5100S_poll(self);
 }
 
-static void W5100S_sleep_timeout_reached(async_context_t *context, __unused async_at_time_worker_t *worker) {
-    assert(context == W5100S_async_context);
-    assert(worker == &sleep_timeout_worker);
-    async_context_set_work_pending(context, &W5100S_poll_worker);
-}
+// static void W5100S_sleep_timeout_reached(async_context_t *context, __unused async_at_time_worker_t *worker) {
+//     assert(context == W5100S_async_context);
+//     // assert(worker == &sleep_timeout_worker);
+//     async_context_set_work_pending(context, &W5100S_poll_worker);
+// }
 
 void W5100s_arch_poll() {
     async_context_poll(W5100S_async_context);
@@ -572,4 +586,58 @@ void W5100S_post_poll_hook(void) {
     W5100S_set_irq_enabled(true);
 }
 
+static inline uint64_t W5100S_mix(uint64_t h) {
+    h ^= h >> 23;
+    h *= 0x2127599bf4325c37ULL;
+    h ^= h >> 47;
+    //
+    return h;
+}
+
+uint64_t W5100S_fast_hash_64(const void * buf, size_t len, uint64_t seed) {
+    const uint64_t m = 0x880355f21e6d1965ULL;
+    const uint64_t * pos = (const uint64_t*)buf;
+    const uint64_t * end = pos + (len / 8);
+    const unsigned char * pos2;
+    uint64_t h = seed ^ (len * m);
+    uint64_t v;
+
+    while(pos != end)
+    {
+        v  = *pos++;
+        h ^= W5100S_mix(v);
+        h *= m;
+    }
+
+    pos2 = (const unsigned char*)pos;
+    v = 0;
+
+    switch(len & 7)
+    {
+        case 7: v ^= (uint64_t)pos2[6] << 48;
+        case 6: v ^= (uint64_t)pos2[5] << 40;
+        case 5: v ^= (uint64_t)pos2[4] << 32;
+        case 4: v ^= (uint64_t)pos2[3] << 24;
+        case 3: v ^= (uint64_t)pos2[2] << 16;
+        case 2: v ^= (uint64_t)pos2[1] << 8;
+        case 1: v ^= (uint64_t)pos2[0];
+                h ^= W5100S_mix(v);
+                h *= m;
+    }
+
+    return W5100S_mix(h);
+}
+
+void W5100S_mac_init(W5100S_t *self) {
+    // Get unique 64bit ID from Pico.
+    pico_unique_board_id_t *unique_id;
+    pico_get_unique_board_id(unique_id);
+
+    // Create 48bit hash for MAC address.
+    uint64_t hash = W5100S_fast_hash_64(unique_id->id, 8, 1234554321);
+    memcpy(self->mac, &hash, 6);
+    char str[50];
+    sprintf(str, "W5100S MAC address: %04X %04X %04X %04X %04X %04X", self->mac[0], self->mac[1], self->mac[2], self->mac[3], self->mac[4], self->mac[5]);
+    PICOLOG_DEBUG("%s", str);
+}
 
