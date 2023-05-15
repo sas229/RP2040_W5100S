@@ -49,6 +49,11 @@ extern "C" {
 /* Timeout */
 #define RECV_TIMEOUT (1000 * 10) // 10 seconds
 
+/* GPIO IRQ handler priority. */
+#ifndef W5100S_GPIO_IRQ_HANDLER_PRIORITY
+#define W5100S_GPIO_IRQ_HANDLER_PRIORITY 0x40
+#endif
+
 // static uint8_t tx_frame[1542];
 
 typedef struct _W5100S_t  {
@@ -160,15 +165,21 @@ bool W5100S_driver_init(async_context_t *context);
 
 void W5100S_driver_deinit(async_context_t *context);
 
+static void W5100S_set_irq_enabled(bool enabled);
+
 uint32_t W5100S_irq_init(__unused void *param);
 
 uint32_t W5100S_irq_deinit(__unused void *param);
+
+static void W5100S_gpio_irq_handler(void);
 
 static void W5100S_do_poll(async_context_t *context, __unused async_when_pending_worker_t *worker);
 
 static void W5100S_sleep_timeout_reached(async_context_t *context, __unused async_at_time_worker_t *worker);
 
 void W5100s_arch_poll();
+
+void W5100S_post_poll_hook(void);
 
 #endif
 

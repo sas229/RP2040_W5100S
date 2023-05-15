@@ -161,8 +161,12 @@ void W5100S_poll(W5100S_t *self) {
         } 
     }
 
-    // Cyclic lwip timers check.
-    sys_check_timeouts();
+    // Re-enable interrupt.
+    W5100S_post_poll_hook();
+    PICOLOG_TRACE("Polling complete.");
+
+    // // Cyclic lwip timers check.
+    // sys_check_timeouts();
 }
 
 void W5100S_link_callback(struct netif *netif) {
@@ -490,7 +494,7 @@ void W5100S_delay_ms(uint32_t ms) {
 }
 
 bool W5100S_driver_init(async_context_t *context) {
-    // async_context_execute_sync(context, W5100S_irq_init, NULL);
+    async_context_execute_sync(context, W5100S_irq_init, NULL);
     async_context_add_when_pending_worker(context, &W5100S_poll_worker);
     PICOLOG_DEBUG("W5100S driver async_context setup.");
     return true;
@@ -498,10 +502,10 @@ bool W5100S_driver_init(async_context_t *context) {
 
 void cyw43_driver_deinit(async_context_t *context) {
     assert(context == W5100S_async_context);
-    async_context_remove_at_time_worker(context, &sleep_timeout_worker);
+    // async_context_remove_at_time_worker(context, &sleep_timeout_worker);
     async_context_remove_when_pending_worker(context, &W5100S_poll_worker);
     // The IRQ IS on the same core as the context, so must be de-initialized there.
-    // async_context_execute_sync(context, W5100S_irq_deinit, NULL);
+    async_context_execute_sync(context, W5100S_irq_deinit, NULL);
     W5100S_deinit(&W5100S_state);
     W5100S_async_context = NULL;
 }
@@ -510,26 +514,43 @@ uint32_t W5100S_irq_init(__unused void *param) {
 #ifndef NDEBUG
     assert(get_core_num() == async_context_core_num(W5100S_async_context));
 #endif
-    // gpio_add_raw_irq_handler_with_order_priority(CYW43_PIN_WL_HOST_WAKE, cyw43_gpio_irq_handler, CYW43_GPIO_IRQ_HANDLER_PRIORITY);
-    // W5100S_set_irq_enabled(true);
-    // irq_set_enabled(IO_IRQ_BANK0, true);
+    gpio_add_raw_irq_handler_with_order_priority(PIN_INT, W5100S_gpio_irq_handler, W5100S_GPIO_IRQ_HANDLER_PRIORITY);
+    W5100S_set_irq_enabled(true);
+    irq_set_enabled(IO_IRQ_BANK0, true);
+    PICOLOG_DEBUG("W5100S interrupt initialised.");
     return 0;
+}
+
+static void W5100S_set_irq_enabled(bool enabled) {
+    gpio_set_irq_enabled(PIN_INT, GPIO_IRQ_LEVEL_LOW, enabled);
 }
 
 uint32_t W5100S_irq_deinit(__unused void *param) {
 #ifndef NDEBUG
     assert(get_core_num() == async_context_core_num(W5100S_async_context));
 #endif
-    // gpio_remove_raw_irq_handler(CYW43_PIN_WL_HOST_WAKE, cyw43_gpio_irq_handler);
-    // cyw43_set_irq_enabled(false);
+    gpio_remove_raw_irq_handler(PIN_INT, W5100S_gpio_irq_handler);
+    W5100S_set_irq_enabled(false);
+    PICOLOG_DEBUG("W5100S interrupt deinitialised.");
     return 0;
+}
+
+static void W5100S_gpio_irq_handler(void) {
+    uint32_t events = gpio_get_irq_event_mask(PIN_INT);
+    if (events & GPIO_IRQ_LEVEL_LOW) {
+        PICOLOG_TRACE("W5100S interrupt event.");
+        // As we use a high level interrupt, it will go off forever until it's serviced
+        // So disable the interrupt until this is done. It's re-enabled again by W5100S_POST_POLL_HOOK
+        // which is called at the end of W5100S_poll_func.
+        W5100S_set_irq_enabled(false);
+        async_context_set_work_pending(W5100S_async_context, &W5100S_poll_worker);
+    }
 }
 
 static void W5100S_do_poll(async_context_t *context, __unused async_when_pending_worker_t *worker) {
 #ifndef NDEBUG
     assert(get_core_num() == async_context_core_num(context));
 #endif
-    PICOLOG_DEBUG("In polling function via async_context.");
     W5100S_t *self = &W5100S_state;
     W5100S_poll(self);
 }
@@ -542,6 +563,13 @@ static void W5100S_sleep_timeout_reached(async_context_t *context, __unused asyn
 
 void W5100s_arch_poll() {
     async_context_poll(W5100S_async_context);
+}
+
+void W5100S_post_poll_hook(void) {
+#ifndef NDEBUG
+    assert(get_core_num() == async_context_core_num(W5100S_async_context));
+#endif
+    W5100S_set_irq_enabled(true);
 }
 
 
