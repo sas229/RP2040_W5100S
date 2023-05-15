@@ -10,6 +10,12 @@ static async_when_pending_worker_t W5100S_poll_worker = {
         .do_work = W5100S_do_poll
 };
 
+W5100S_t W5100S_state = {
+    .spi_frequency = 36*1000*1000,
+    .dhcp_ip_allocated = false,
+    .socket = 0,
+};
+
 // static async_at_time_worker_t sleep_timeout_worker = {
 //         .do_work = W5100S_sleep_timeout_reached
 // };
