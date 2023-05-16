@@ -15,37 +15,8 @@ project(W5100S C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-# Create W5100S interface library.
-add_library(W5100S INTERFACE)
-target_sources(W5100S PUBLIC
-    ${CMAKE_CURRENT_LIST_DIR}/src/W5100S.c
-    ${CMAKE_CURRENT_LIST_DIR}/libraries/ioLibrary_Driver/Ethernet/socket.c
-    ${CMAKE_CURRENT_LIST_DIR}/libraries/ioLibrary_Driver/Ethernet/wizchip_conf.c
-    ${CMAKE_CURRENT_LIST_DIR}/libraries/ioLibrary_Driver/Ethernet/W5100S/w5100s.c
-    )
-target_include_directories(W5100S INTERFACE 
-    ${CMAKE_CURRENT_LIST_DIR}/src/
-    ${CMAKE_CURRENT_LIST_DIR}/libraries/ioLibrary_Driver/Ethernet
-    ${CMAKE_CURRENT_LIST_DIR}/libraries/ioLibrary_Driver/Ethernet/W5100S
-    )
-target_link_libraries(W5100S INTERFACE
-    pico_stdlib
-    pico_time
-    pico_async_context_poll
-    hardware_spi 
-    hardware_dma
-    hardware_clocks
-    picolog 
-    pico_lwip
-    pico_lwip_nosys
-    )
-target_compile_definitions(W5100S INTERFACE 
-    _WIZCHIP_=W5100S
-    NOSYS=1
-    PICO_CYW43_ARCH_POLL=1
-    )
-message("W5100S interface library available.")
-
 # Add required subdirectories to build examples.
 add_subdirectory(libraries/picolog)
-add_subdirectory(examples)
+add_subdirectory(libraries/W5100S_arch)
+add_subdirectory(libraries/W5100S_driver)
+add_subdirectory(examples/poll)

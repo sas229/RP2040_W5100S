@@ -5,6 +5,11 @@
         "w5100s.h": "c",
         "stdlib.h": "c",
         "*.ipp": "c",
-        "async_context.h": "c"
+        "async_context.h": "c",
+        "platform.h": "c",
+        "config.h": "c",
+        "error.h": "c",
+        "compare": "c",
+        "string_view": "cpp"
     }
 }

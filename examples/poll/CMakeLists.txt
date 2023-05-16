@@ -4,10 +4,11 @@ add_executable(${TARGET_NAME}
         )
 target_link_libraries(${TARGET_NAME} PRIVATE
         pico_stdlib
-        W5100S
         picolog
+        W5100S_arch_poll
         )
 target_compile_definitions(${TARGET_NAME} PRIVATE
+        W5100S_ARCH_POLL=1
         NOSYS=1
         )
 pico_enable_stdio_usb(${TARGET_NAME} 1)

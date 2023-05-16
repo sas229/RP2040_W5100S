@@ -1,7 +1,15 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
-#include "W5100S.h"
+#include "W5100S_arch.h"
 #include "picolog.h"
+
+W5100S_t W5100S_state = {
+    .spi_frequency = 36*1000*1000,
+    .dhcp_ip_allocated = false,
+    .socket = 0,
+    .p = NULL,
+    .pack_len = 0,
+};
 
 int main() {
     stdio_init_all();
