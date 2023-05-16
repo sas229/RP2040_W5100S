@@ -42,6 +42,7 @@ target_link_libraries(W5100S INTERFACE
 target_compile_definitions(W5100S INTERFACE 
     _WIZCHIP_=W5100S
     NOSYS=1
+    PICO_CYW43_ARCH_POLL=1
     )
 message("W5100S interface library available.")
 

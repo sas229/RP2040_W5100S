@@ -15,6 +15,8 @@ int main() {
 
     while (true) {
         W5100s_arch_poll();
+        printf("Hello loop...\n");
+        sleep_ms(200);
     }
     return 0;
 }

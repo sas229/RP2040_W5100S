@@ -55,18 +55,20 @@ extern "C" {
 #define W5100S_GPIO_IRQ_HANDLER_PRIORITY 0x40
 #endif
 
+/* Poll timeout. */
+#ifndef W5100S_SLEEP_CHECK_MS
+#define W5100S_SLEEP_CHECK_MS 50
+#endif
+
 // static uint8_t tx_frame[1542];
 
 typedef struct _W5100S_t  {
     uint8_t mac[6];
     struct netif *netif;
-    uint8_t *pack;
-    uint16_t pack_len;
-    struct pbuf *p;
-    uint8_t tx_frame;
     uint32_t ethernet_polynomial_le;
     int spi_frequency;
     uint8_t socket;
+    uint8_t *pack;
 
     int connect_timeout;
     bool cable_connected;
@@ -175,9 +177,9 @@ uint32_t W5100S_irq_deinit(void *param);
 
 static void W5100S_gpio_irq_handler(void);
 
-static void W5100S_do_poll(async_context_t *context, __unused async_when_pending_worker_t *worker);
+static void W5100S_do_poll(async_context_t *context, async_when_pending_worker_t *worker);
 
-// static void W5100S_sleep_timeout_reached(async_context_t *context, __unused async_at_time_worker_t *worker);
+static void W5100S_timeout_reached(async_context_t *context, async_at_time_worker_t *worker);
 
 void W5100s_arch_poll();
 
