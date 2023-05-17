@@ -8,6 +8,7 @@
 #define _W5100S_ARCH_H
 
 #include "pico.h"
+#include "picolog.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -307,6 +308,9 @@ static inline int W5100S_arch_lwip_protect(int (*func)(void *param), void *param
  * \sa async_context_lock_check
  * \sa W5100S_arch_async_context
  */
+
+/** @brief Connect function. */
+bool W5100S_arch_eth_connect(void);
 
 #ifdef __cplusplus
 }

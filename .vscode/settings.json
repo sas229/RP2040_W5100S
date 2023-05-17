@@ -10,6 +10,7 @@
         "config.h": "c",
         "error.h": "c",
         "compare": "c",
-        "string_view": "cpp"
+        "string_view": "cpp",
+        "unique_id.h": "c"
     }
 }

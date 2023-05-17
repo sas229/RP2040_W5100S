@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2022 Raspberry Pi (Trading) Ltd.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
 #ifndef _PICO_W5100S_DRIVER_H
 #define _PICO_W5100S_DRIVER_H
 
@@ -60,6 +66,8 @@
 #define W5100S_SLEEP_CHECK_MS 50
 #endif
 
+#define W5100S_POST_POLL_HOOK W5100S_post_poll_hook();
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -88,44 +96,55 @@ typedef struct _W5100S_t  {
     dma_channel_config dma_channel_config_rx;
 } W5100S_t;
 
-bool W5100S_driver_init(async_context_t *context);
+static void W5100S_set_irq_enabled(bool enabled);
 
-void W5100S_driver_deinit(async_context_t *context);
-
-void W5100S_thread_enter(void);
-
-void W5100S_thread_exit(void);
-
-bool W5100S_init(W5100S_t *self);
-
-void W5100S_deinit(W5100S_t *self);
+static void W5100S_gpio_irq_handler(void);
 
 uint32_t W5100S_irq_init(void *param);
 
 uint32_t W5100S_irq_deinit(void *param);
 
-static void W5100S_do_poll(async_context_t *context, async_when_pending_worker_t *worker);
-
-static void W5100S_gpio_irq_handler(void);
-
-static void W5100S_set_irq_enabled(bool enabled);
-
-void W5100S_poll(W5100S_t *self);
-
-bool W5100S_cable_connected(W5100S_t *self);
-
 void W5100S_post_poll_hook(void);
 
-void W5100s_arch_poll(void);
+void W5100S_schedule_internal_poll_dispatch(__unused void (*func)(void));
+
+static void W5100S_do_poll(async_context_t *context, async_when_pending_worker_t *worker);
+
+static void W5100S_sleep_timeout_reached(async_context_t *context, async_at_time_worker_t *worker);
+
+bool W5100S_init(W5100S_t *self);
+
+void W5100S_deinit(W5100S_t *self);
+
+uint32_t storage_read_blocks(__unused uint8_t *dest, __unused uint32_t block_num, __unused uint32_t num_blocks);
+
+void W5100S_thread_enter(void);
+
+void W5100S_thread_exit(void);
+
+void cyw43_thread_lock_check(void);
+
+bool W5100S_driver_init(async_context_t *context);
+
+void W5100S_driver_deinit(async_context_t *context);
+
+void W5100S_await_background_or_timeout_us(uint32_t timeout_us);
+
+void W5100S_delay_ms(uint32_t ms);
+
+void W5100S_delay_us(uint32_t us);
+
+
+
+void W5100S_check_state(void);
+
+bool W5100S_cable_connected(W5100S_t *self);
 
 static inline uint64_t W5100S_mix(uint64_t h);
 
 uint64_t W5100S_fast_hash_64(const void * buf, size_t len, uint64_t seed);
 
 void W5100S_mac_init(W5100S_t *self);
-
-/** @brief Connect function. */
-bool W5100S_connect(W5100S_t *self);
 
 /** @brief Bring the link up.*/
 bool W5100S_bring_link_up(W5100S_t *self);

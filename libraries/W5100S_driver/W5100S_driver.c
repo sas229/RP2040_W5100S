@@ -1,12 +1,12 @@
+/*
+ * Copyright (c) 2022 Raspberry Pi (Trading) Ltd.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
 #include "W5100S_driver.h"
 
-static async_context_poll_t W5100S_async_context_poll;
-
 static async_context_t *W5100S_async_context;
-
-static void W5100S_sleep_timeout_reached(async_context_t *context, async_at_time_worker_t *worker);
-
-static void W5100S_do_poll(async_context_t *context, async_when_pending_worker_t *worker);
 
 static async_at_time_worker_t sleep_timeout_worker = {
         .do_work = W5100S_sleep_timeout_reached
@@ -16,96 +16,26 @@ static async_when_pending_worker_t W5100S_poll_worker = {
         .do_work = W5100S_do_poll
 };
 
+extern W5100S_t W5100S_state;
+void (*W5100S_poll)(void);
+uint32_t W5100S_sleep;
 static uint8_t tx_frame[1542];
-
 static const uint32_t ethernet_polynomial_le = 0xedb88320U;
 
-extern W5100S_t W5100S_state;
-
-
-bool W5100S_driver_init(async_context_t *context) {
-    W5100S_init(&W5100S_state);
-    W5100S_async_context = context;
-    // we need the IRQ to be on the same core as the context, because we need to be able to enable/disable the IRQ
-    // from there later
-    async_context_execute_sync(context, W5100S_irq_init, NULL);
-    async_context_add_when_pending_worker(context, &W5100S_poll_worker);
-    return true;
+static void W5100S_set_irq_enabled(bool enabled) {
+    gpio_set_irq_enabled(PIN_INT, GPIO_IRQ_EDGE_FALL, enabled);
 }
 
-void W5100S_driver_deinit(async_context_t *context) {
-    assert(context == W5100S_async_context);
-    async_context_remove_at_time_worker(context, &sleep_timeout_worker);
-    async_context_remove_when_pending_worker(context, &W5100S_poll_worker);
-    // the IRQ IS on the same core as the context, so must be de-initialized there
-    async_context_execute_sync(context, W5100S_irq_deinit, NULL);
-    W5100S_deinit(&W5100S_state);
-    W5100S_async_context = NULL;
-}
-
-void W5100S_thread_enter(void) {
-    async_context_acquire_lock_blocking(W5100S_async_context);
-}
-
-void W5100S_thread_exit(void) {
-    async_context_release_lock(W5100S_async_context);
-}
-
-bool W5100S_init(W5100S_t *self) {
-    // Allocate memory for packet.
-    self->pack = malloc(ETHERNET_MTU);
-
-    // Initialise WizNet chip.
-    PICOLOG_INFO("Initialising W5100S chip.");
-    W5100S_mac_init(self);
-    W5100S_spi_init(self);
-    W5100S_dma_init(self);
-    W5100S_critical_section_init(self);
-    W5100S_reset(self);
-    W5100S_chip_init(self);
-    W5100S_version_check(self);
-
-    // Set ethernet chip MAC address.
-    setSHAR(self->mac);
-    if(ctlwizchip(CW_RESET_PHY, 0) < 0) {
-        PICOLOG_ERROR("Reset PHY failed.");
-        return false;
-    };
-    PICOLOG_DEBUG("W5100S MAC address set.");
-
-    // Initialise lwip.
-    // Do the following only if this is a Pico board, rather than Pico W. Needs some define logic or similar.
-    // Currently only implemented for poll method. Threadsafe background and FreeRTOS methods to be added.
-    async_context_poll_init_with_defaults(&W5100S_async_context_poll);
-    W5100S_async_context = &W5100S_async_context_poll.core;
-    bool ok = W5100S_driver_init(W5100S_async_context);  
-    ok &= lwip_nosys_init(W5100S_async_context);
-    PICOLOG_DEBUG("W5100S context initialised lwip.");
-
-    // Add interface.
-    // netif_input_fn input_func = tcpip_input;
-    // netif_add(self->netif, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY, NULL, netif_init, input_func);
-    netif_add(self->netif, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY, NULL, W5100S_netif_init, netif_input);
-    self->netif->name[0] = 'e';
-    self->netif->name[1] = '0';
-    PICOLOG_DEBUG("W5100S network interface added.");
-
-    // Assign callbacks for link and status.
-    netif_set_link_callback(self->netif, W5100S_link_callback);
-    netif_set_status_callback(self->netif, W5100S_status_callback);
-    PICOLOG_DEBUG("W5100S link and status callbacks added.");
-
-    // MACRAW socket open.
-    if (socket(0, Sn_MR_MACRAW, 5001, 0x00) < 0) {
-        PICOLOG_ERROR(" MACRAW socket open failed.");
-        return false;
+static void W5100S_gpio_irq_handler(void) {
+    uint32_t events = gpio_get_irq_event_mask(PIN_INT);
+    if (events & GPIO_IRQ_EDGE_FALL) {
+        PICOLOG_TRACE("W5100S interrupt event.");
+        // As we use a high level interrupt, it will go off forever until it's serviced.
+        // So disable the interrupt until this is done. It's re-enabled again by
+        // W5100S_post_poll_hook() which is called at the end of W5100S_poll_func.
+        W5100S_set_irq_enabled(false);
+        async_context_set_work_pending(W5100S_async_context, &W5100S_poll_worker);
     }
-    PICOLOG_INFO("W5100S initialised.");
-    return true;
-}
-
-void W5100S_deinit(W5100S_t *self) {
-    PICOLOG_INFO("W5100S deinitialised.");
 }
 
 uint32_t W5100S_irq_init(void *param) {
@@ -140,12 +70,33 @@ uint32_t W5100S_irq_deinit(void *param) {
     return 0;
 }
 
-static void W5100S_do_poll(async_context_t *context, async_when_pending_worker_t *worker) {
+void W5100S_post_poll_hook(void) {
 #ifndef NDEBUG
-    assert(get_core_num() == async_context_core_num(context));
+    assert(get_core_num() == async_context_core_num(W5100S_async_context));
 #endif
-    W5100S_t *self = &W5100S_state;
-    W5100S_poll(self);
+    W5100S_set_irq_enabled(true);
+}
+
+void W5100S_schedule_internal_poll_dispatch(__unused void (*func)(void)) {
+    assert(func == W5100S_poll);
+    async_context_set_work_pending(W5100S_async_context, &W5100S_poll_worker);
+}
+
+static void W5100S_do_poll(async_context_t *context, __unused async_when_pending_worker_t *worker) {
+#ifndef NDEBUG
+    assert(get_core_num() == async_context_core_num(W5100S_async_context));
+#endif
+    if (W5100S_poll) {
+        if (W5100S_sleep > 0) {
+            W5100S_sleep--;
+        }
+        W5100S_poll();
+        if (W5100S_sleep) {
+            async_context_add_at_time_worker_in_ms(context, &sleep_timeout_worker, W5100S_SLEEP_CHECK_MS);
+        } else {
+            async_context_remove_at_time_worker(context, &sleep_timeout_worker);
+        }
+    }
 }
 
 static void W5100S_sleep_timeout_reached(async_context_t *context, __unused async_at_time_worker_t *worker) {
@@ -154,23 +105,136 @@ static void W5100S_sleep_timeout_reached(async_context_t *context, __unused asyn
     async_context_set_work_pending(context, &W5100S_poll_worker);
 }
 
-static void W5100S_gpio_irq_handler(void) {
-    uint32_t events = gpio_get_irq_event_mask(PIN_INT);
-    if (events & GPIO_IRQ_EDGE_FALL) {
-        PICOLOG_TRACE("W5100S interrupt event.");
-        // As we use a high level interrupt, it will go off forever until it's serviced.
-        // So disable the interrupt until this is done. It's re-enabled again by
-        // W5100S_post_poll_hook() which is called at the end of W5100S_poll_func.
-        W5100S_set_irq_enabled(false);
-        async_context_set_work_pending(W5100S_async_context, &W5100S_poll_worker);
+bool W5100S_driver_init(async_context_t *context) {
+    W5100S_init(&W5100S_state);
+    W5100S_async_context = context;
+    // we need the IRQ to be on the same core as the context, because we need to be able to enable/disable the IRQ
+    // from there later
+    async_context_execute_sync(context, W5100S_irq_init, NULL);
+    async_context_add_when_pending_worker(context, &W5100S_poll_worker);
+    return true;
+}
+
+void W5100S_driver_deinit(async_context_t *context) {
+    assert(context == W5100S_async_context);
+    async_context_remove_at_time_worker(context, &sleep_timeout_worker);
+    async_context_remove_when_pending_worker(context, &W5100S_poll_worker);
+    // the IRQ IS on the same core as the context, so must be de-initialized there
+    async_context_execute_sync(context, W5100S_irq_deinit, NULL);
+    W5100S_deinit(&W5100S_state);
+    W5100S_async_context = NULL;
+}
+
+uint32_t storage_read_blocks(__unused uint8_t *dest, __unused uint32_t block_num, __unused uint32_t num_blocks) {
+    panic_unsupported();
+}
+
+void W5100S_thread_enter(void) {
+    async_context_acquire_lock_blocking(W5100S_async_context);
+}
+
+void W5100S_thread_exit(void) {
+    async_context_release_lock(W5100S_async_context);
+}
+
+#ifndef NDEBUG
+void W5100S_thread_lock_check(void) {
+    async_context_lock_check(W5100S_async_context);
+}
+#endif
+
+void W5100S_await_background_or_timeout_us(uint32_t timeout_us) {
+    async_context_wait_for_work_until(W5100S_async_context, make_timeout_time_us(timeout_us));
+}
+
+void W5100S_delay_ms(uint32_t ms) {
+    async_context_wait_until(W5100S_async_context, make_timeout_time_ms(ms));
+}
+
+void W5100S_delay_us(uint32_t us) {
+    async_context_wait_until(W5100S_async_context, make_timeout_time_us(us));
+}
+
+#if !W5100S_LWIP
+static void no_lwip_fail() {
+    panic("W5100S has no ethernet interface");
+}
+void __attribute__((weak)) W5100S_cb_tcpip_init(W5100S_t *self, int itf) {
+}
+void __attribute__((weak)) W5100S_cb_tcpip_deinit(W5100S_t *self, int itf) {
+}
+void __attribute__((weak)) W5100S_cb_tcpip_set_link_up(W5100S_t *self, int itf) {
+    no_lwip_fail();
+}
+void __attribute__((weak)) W5100S_cb_tcpip_set_link_down(W5100S_t *self, int itf) {
+    no_lwip_fail();
+}
+void __attribute__((weak)) W5100S_cb_process_ethernet(void *cb_data, int itf, size_t len, const uint8_t *buf) {
+    no_lwip_fail();
+}
+#endif
+
+
+bool W5100S_init(W5100S_t *self) {
+    // Allocate memory for packet.
+    self->pack = malloc(ETHERNET_MTU);
+
+    // Initialise WizNet chip.
+    PICOLOG_INFO("Initialising W5100S chip.");
+    W5100S_mac_init(self);
+    W5100S_spi_init(self);
+    W5100S_dma_init(self);
+    W5100S_critical_section_init(self);
+    W5100S_reset(self);
+    W5100S_chip_init(self);
+    W5100S_version_check(self);
+
+    // Set ethernet chip MAC address.
+    setSHAR(self->mac);
+    if(ctlwizchip(CW_RESET_PHY, 0) < 0) {
+        PICOLOG_ERROR("Reset PHY failed.");
+        return false;
+    };
+    PICOLOG_DEBUG("W5100S MAC address set.");
+
+    // // Initialise lwip.
+    // // Do the following only if this is a Pico board, rather than Pico W. Needs some define logic or similar.
+    // // Currently only implemented for poll method. Threadsafe background and FreeRTOS methods to be added.
+    // async_context_poll_init_with_defaults(&W5100S_async_context_poll);
+    // W5100S_async_context = &W5100S_async_context_poll.core;
+    // bool ok = W5100S_driver_init(W5100S_async_context);  
+    // ok &= lwip_nosys_init(W5100S_async_context);
+    // PICOLOG_DEBUG("W5100S context initialised lwip.");
+
+    // // Add interface.
+    // // netif_input_fn input_func = tcpip_input;
+    // // netif_add(self->netif, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY, NULL, netif_init, input_func);
+    // netif_add(self->netif, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY, NULL, W5100S_netif_init, netif_input);
+    // self->netif->name[0] = 'e';
+    // self->netif->name[1] = '0';
+    // PICOLOG_DEBUG("W5100S network interface added.");
+
+    // // Assign callbacks for link and status.
+    // netif_set_link_callback(self->netif, W5100S_link_callback);
+    // netif_set_status_callback(self->netif, W5100S_status_callback);
+    // PICOLOG_DEBUG("W5100S link and status callbacks added.");
+
+    // MACRAW socket open.
+    if (socket(0, Sn_MR_MACRAW, 5001, 0x00) < 0) {
+        PICOLOG_ERROR(" MACRAW socket open failed.");
+        return false;
     }
+    W5100S_poll = NULL;
+    PICOLOG_INFO("W5100S initialised.");
+    return true;
 }
 
-static void W5100S_set_irq_enabled(bool enabled) {
-    gpio_set_irq_enabled(PIN_INT, GPIO_IRQ_EDGE_FALL, enabled);
+void W5100S_deinit(W5100S_t *self) {
+    PICOLOG_INFO("W5100S deinitialised.");
 }
 
-void W5100S_poll(W5100S_t *self) {
+void W5100S_check_state(void) {
+    W5100S_t *self = &W5100S_state;
     PICOLOG_TRACE("W5100S poll.");
     W5100S_cable_connected(self);
     // Check for DHCP IP address allocation.
@@ -213,17 +277,6 @@ bool W5100S_cable_connected(W5100S_t *self) {
     int bit = 1;
     self->cable_connected = (bool)!(1 == ((byte >> bit) & 1));
     return self->cable_connected;
-}
-
-void W5100S_post_poll_hook(void) {
-#ifndef NDEBUG
-    assert(get_core_num() == async_context_core_num(W5100S_async_context));
-#endif
-    W5100S_set_irq_enabled(true);
-}
-
-void W5100s_arch_poll(void) {
-    async_context_poll(W5100S_async_context);
 }
 
 static inline uint64_t W5100S_mix(uint64_t h) {
@@ -279,24 +332,6 @@ void W5100S_mac_init(W5100S_t *self) {
     char str[50];
     sprintf(str, "W5100S MAC address: %04X %04X %04X %04X %04X %04X", self->mac[0], self->mac[1], self->mac[2], self->mac[3], self->mac[4], self->mac[5]);
     PICOLOG_DEBUG("%s", str);
-}
-
-bool W5100S_connect(W5100S_t *self) {
-    absolute_time_t expiry = make_timeout_time_ms(self->connect_timeout);
-    while(!W5100S_cable_connected(self) && get_absolute_time() < expiry) {
-        if (W5100S_cable_connected(self)) {
-            // Bring up interface.
-            self->link_up = W5100S_bring_link_up(self);
-        }
-        W5100S_process(self);
-    }
-    // If timeout reached, emit warning on log.
-    if (!self->link_up) {
-        PICOLOG_WARNING("Ethernet cable not connected.");
-    }
-    self->connected = true;
-    async_context_add_at_time_worker_in_ms(W5100S_async_context, &sleep_timeout_worker, W5100S_SLEEP_CHECK_MS);
-    return self->connected;
 }
 
 bool W5100S_bring_link_up(W5100S_t *self) {
