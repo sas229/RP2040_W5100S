@@ -59,3 +59,7 @@ bool W5100S_arch_eth_connect(void) {
     self->connected = true;
     return self->connected;
 }
+
+int W5100S_arch_eth_link_status(W5100S_t *self) {
+    return self->status;
+}

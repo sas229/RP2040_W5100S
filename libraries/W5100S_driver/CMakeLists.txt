@@ -1,6 +1,7 @@
 add_library(W5100S_driver INTERFACE)
 target_sources(W5100S_driver INTERFACE
         ${CMAKE_CURRENT_LIST_DIR}/W5100S_driver.c
+        ${CMAKE_CURRENT_LIST_DIR}/W5100S_lwip.c
         ${CMAKE_CURRENT_LIST_DIR}/../ioLibrary_Driver/Ethernet/socket.c
         ${CMAKE_CURRENT_LIST_DIR}/../ioLibrary_Driver/Ethernet/wizchip_conf.c
         ${CMAKE_CURRENT_LIST_DIR}/../ioLibrary_Driver/Ethernet/W5100S/w5100s.c

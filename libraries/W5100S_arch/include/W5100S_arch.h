@@ -312,6 +312,9 @@ static inline int W5100S_arch_lwip_protect(int (*func)(void *param), void *param
 /** @brief Connect function. */
 bool W5100S_arch_eth_connect(void);
 
+/** @brief Current ethernet link status. */
+int W5100S_arch_eth_link_status(W5100S_t *self);
+
 #ifdef __cplusplus
 }
 #endif

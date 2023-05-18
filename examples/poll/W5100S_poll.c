@@ -18,13 +18,14 @@ int main() {
     // Initialise logging.
     PICOLOG_INIT(PICOLOG_TRACE_LEVEL);
 
+    // Initialise W5100S.
     W5100S_arch_init();
     W5100S_arch_eth_connect();
 
     while (true) {
         W5100S_arch_poll();
-        printf("Hello loop...\n");
-        sleep_ms(200);
+        // printf("Hello loop...\n");
+        sleep_ms(50);
     }
     return 0;
 }

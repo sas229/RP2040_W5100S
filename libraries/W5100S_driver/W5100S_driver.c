@@ -6,6 +6,12 @@
 
 #include "W5100S_driver.h"
 
+#define W5100S_arch_lwip_check() W5100S_thread_lock_check()
+#define W5100S_THREAD_LOCK_CHECK W5100S_arch_lwip_check();
+#define W5100S_POST_POLL_HOOK W5100S_post_poll_hook();
+
+#define W5100S_HOST_NAME "UniLab"
+
 static async_context_t *W5100S_async_context;
 
 static async_at_time_worker_t sleep_timeout_worker = {
@@ -197,28 +203,6 @@ bool W5100S_init(W5100S_t *self) {
     };
     PICOLOG_DEBUG("W5100S MAC address set.");
 
-    // // Initialise lwip.
-    // // Do the following only if this is a Pico board, rather than Pico W. Needs some define logic or similar.
-    // // Currently only implemented for poll method. Threadsafe background and FreeRTOS methods to be added.
-    // async_context_poll_init_with_defaults(&W5100S_async_context_poll);
-    // W5100S_async_context = &W5100S_async_context_poll.core;
-    // bool ok = W5100S_driver_init(W5100S_async_context);  
-    // ok &= lwip_nosys_init(W5100S_async_context);
-    // PICOLOG_DEBUG("W5100S context initialised lwip.");
-
-    // // Add interface.
-    // // netif_input_fn input_func = tcpip_input;
-    // // netif_add(self->netif, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY, NULL, netif_init, input_func);
-    // netif_add(self->netif, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY, NULL, W5100S_netif_init, netif_input);
-    // self->netif->name[0] = 'e';
-    // self->netif->name[1] = '0';
-    // PICOLOG_DEBUG("W5100S network interface added.");
-
-    // // Assign callbacks for link and status.
-    // netif_set_link_callback(self->netif, W5100S_link_callback);
-    // netif_set_status_callback(self->netif, W5100S_status_callback);
-    // PICOLOG_DEBUG("W5100S link and status callbacks added.");
-
     // MACRAW socket open.
     if (socket(0, Sn_MR_MACRAW, 5001, 0x00) < 0) {
         PICOLOG_ERROR(" MACRAW socket open failed.");
@@ -230,10 +214,22 @@ bool W5100S_init(W5100S_t *self) {
 }
 
 void W5100S_deinit(W5100S_t *self) {
+    W5100S_THREAD_ENTER;
+    if (W5100S_poll == NULL) {
+        W5100S_THREAD_EXIT;
+        return;
+    }
+
+    // Stop the TCP/IP network interfaces.
+    W5100S_cb_tcpip_deinit(self);
+    W5100S_cb_tcpip_deinit(self);
+
+    W5100S_THREAD_EXIT;
     PICOLOG_INFO("W5100S deinitialised.");
 }
 
 void W5100S_check_state(void) {
+    W5100S_THREAD_LOCK_CHECK;
     W5100S_t *self = &W5100S_state;
     PICOLOG_TRACE("W5100S poll.");
     W5100S_cable_connected(self);

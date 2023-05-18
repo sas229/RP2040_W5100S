@@ -4,8 +4,12 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#ifndef _PICO_W5100S_DRIVER_H
-#define _PICO_W5100S_DRIVER_H
+#ifndef _W5100S_DRIVER_H
+#define _W5100S_DRIVER_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include <string.h>
 
@@ -39,6 +43,8 @@
 #include "pico/async_context_poll.h"
 #include "pico/lwip_nosys.h"
 
+#include "W5100S_lwip.h"
+
 // SPI setup.
 #define SPI_PORT spi0
 #define PIN_SCK 18
@@ -66,11 +72,16 @@
 #define W5100S_SLEEP_CHECK_MS 50
 #endif
 
-#define W5100S_POST_POLL_HOOK W5100S_post_poll_hook();
+/* Link status. */
+#define W5100S_LINK_DISCONNECTED (0)     ///< Interface disconnected.
+#define W5100S_LINK_CONNECTED    (1)     ///< Interface up, but cable disconnected.
+#define W5100S_LINK_NOIP         (2)     ///< Cable connected, but no IP address.
+#define W5100S_LINK_UP           (3)     ///< Cable connected with an IP address.
+#define W5100S_LINK_FAIL         (-1)    ///< Connection failed.
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/* Lock macros. */
+#define W5100S_THREAD_ENTER W5100S_thread_enter();
+#define W5100S_THREAD_EXIT W5100S_thread_exit();
 
 typedef struct _W5100S_t  {
     uint8_t mac[6];
@@ -87,6 +98,7 @@ typedef struct _W5100S_t  {
     bool link_up;
     bool connected;
     bool dhcp_ip_allocated;
+    int status;
     
     critical_section_t critical_section;
     
@@ -122,7 +134,7 @@ void W5100S_thread_enter(void);
 
 void W5100S_thread_exit(void);
 
-void cyw43_thread_lock_check(void);
+void W5100S_thread_lock_check(void);
 
 bool W5100S_driver_init(async_context_t *context);
 
